@@ -22,8 +22,8 @@ fx = 524.040
 fy = 524.040
 cy = 319.254
 cx = 251.227
-K = [-fx 0  cx;
-      0 fy cy]
+K = [fx 0  cx;
+     0 fy cy]
 
 detector = nothing
 try
@@ -33,7 +33,8 @@ try
     # 1. Run against a file
     global image = load(dirname(Base.source_path()) *"/../data/tagtest.jpg");
     global tags = detector(image)
-    showImage(image, tags, K)
+    out_img = showImage(image, tags, K)
+    save("tagtest_detected.png", out_img)
 
     # 2. Run against an image from memory
     file = open(dirname(Base.source_path()) *"/../data/tagtest.jpg")
@@ -69,11 +70,8 @@ try
     # copy detections
     global tags = getTagDetections(detections)
     # Reading homography of tag 1 (deepcopy since memory is destoyed by c)
-    voidpointertoH = Base.unsafe_convert(Ptr{Nothing}, tags[1].H)
-    # pointer to H matrix
-    nrows = unsafe_load(Ptr{UInt32}(voidpointertoH),1)
-    ncols = unsafe_load(Ptr{UInt32}(voidpointertoH),2)
-    H = deepcopy(unsafe_wrap(Array, Ptr{Cdouble}(voidpointertoH+8), (3,3)))
+    matH = unsafe_load(tags[1].H)
+    H = deepcopy(unsafe_wrap(Array, matH.data, (3,3))')
 
 finally
     # Cleanup: free the detector and tag family when done.

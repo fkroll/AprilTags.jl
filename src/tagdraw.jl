@@ -6,7 +6,7 @@ Draw a box around the tag.
 foreach(tag->drawTagBox!(imageCol, tag), tags)
 `
 """
-function drawTagBox!(image::Array{T,2}, tag::AprilTag; width::Int = 1, drawReticle::Bool = true) where T <: RGB
+function drawTagBox!(image::AbstractMatrix{T}, tag::AprilTag; width::Int = 1, drawReticle::Bool = true) where T <: RGB
     cpoints = map(tag -> Point(round.(Int,tag)...),tag.p)
     # Reticle
     if drawReticle
@@ -97,31 +97,34 @@ Draw the tag x, y, and z axes to show the orientation.
 foreach(tag->drawTagAxes!(imageCol, tag, K), tags)
 `
 """
-function drawTagAxes!(image::AbstractArray{<:AbstractRGB,2}, 
+function drawTagAxes!(image::AbstractMatrix{<:AbstractRGB}, 
                       tag::AprilTag, 
-                      K::AbstractArray{<:Real,2} )
+                      K::AbstractMatrix{<:Real} )
     #
-    Kp = [K [0;0]; 0.0 0.0 1.0 0.0]
-    pose = AprilTags.homographytopose(tag.H, Kp[1,1], Kp[2,2], Kp[1,3], Kp[2,3])
+    fx = K[1, 1]
+    fy = K[2, 2]
+    cx = K[1, 3]
+    cy = K[2, 3]
+    pose = AprilTags.homographytopose(tag.H, fx, fy, cx, cy)
 
-    # calculate and project
-    p0 = Kp*pose[:,4]
-    p0 /= p0[3]
+    # project a 3D point in tag frame to 2D image coordinates
+    function project(pt3d::SVector{3,Float64})
+        p_cam = pose(pt3d)
+        return SVector{2,Float64}(
+            fx * p_cam[1] / p_cam[3] + cx,
+            fy * p_cam[2] / p_cam[3] + cy
+        )
+    end
 
-    p1 = Kp*(pose[:,4] + pose[:,1])
-    p1 /= p1[3]
+    p0 = project(SVector{3,Float64}(0.0, 0.0, 0.0))
+    p1 = project(SVector{3,Float64}(1.0, 0.0, 0.0))
+    p2 = project(SVector{3,Float64}(0.0, 1.0, 0.0))
+    p3 = project(SVector{3,Float64}(0.0, 0.0, 1.0))
 
-    p2 = Kp*(pose[:,4] + pose[:,2])
-    p2 /= p2[3]
-
-    p3 = Kp*(pose[:,4] + pose[:,3])
-    p3 /= p3[3]
-
-
-    ip0 = Point(round.(Int,p0[1:2])...)
-    ip1 = Point(round.(Int,p1[1:2])...)
-    ip2 = Point(round.(Int,p2[1:2])...)
-    ip3 = Point(round.(Int,p3[1:2])...)
+    ip0 = Point(round.(Int,p0)...)
+    ip1 = Point(round.(Int,p1)...)
+    ip2 = Point(round.(Int,p2)...)
+    ip3 = Point(round.(Int,p3)...)
     #TODO check that the line stays on the image to avoid bounds errors
     draw!(image, LineSegment(ip0, ip1), RGB{N0f8}(1.0, 0.0, 0.0), boundedBresenham)
     draw!(image, LineSegment(ip0, ip2), RGB{N0f8}(0.0, 1.0, 0.0), boundedBresenham)

@@ -7,7 +7,7 @@ Represents the detected April tag.
 Fields:
     $(TYPEDFIELDS)
 """
-struct AprilTag
+struct AprilTag{T <: Real}
     "The family of the tag."
     family::String
     "The decoded ID of the tag."
@@ -23,11 +23,11 @@ struct AprilTag
     decision_margin::Float32
     """The 3x3 homography matrix describing the projection from an "ideal" tag (with corners at (-1,1), (1,1), (1,-1), and (-1,-1))
 	to pixels in the image."""
-    H::Matrix{Float64}
+    H::SMatrix{3,3,T,9}
     "The center of the detection in image pixel coordinates"
-    c::Vector{Float64}
+    c::SVector{2,T}
     "The corners of the tag in image pixel coordinates. These always wrap counter-clock wise around the tag."
-    p::Vector{Vector{Float64}}
+    p::SVector{4,SVector{2,T}}
 end
 
 mutable struct AprilTagDetector
@@ -135,7 +135,7 @@ const U8Types = Union{UInt8, N0f8, Gray{N0f8}}
 	AprilTagDetector(img)
 Run the april tag detector on a image
 """
-function (detector::AprilTagDetector)(image::Array{T, 2}) where T <: U8Types
+function (detector::AprilTagDetector)(image::AbstractMatrix{T}) where T <: U8Types
 
     if detector.td == C_NULL
         error("AprilTags Detector does not exist")
@@ -162,18 +162,18 @@ function (detector::AprilTagDetector)(image::Array{T, 2}) where T <: U8Types
 
 end
 
-function (detector::AprilTagDetector)(image::Array{ColorTypes.RGB{T}, 2}) where T
+function (detector::AprilTagDetector)(image::AbstractMatrix{ColorTypes.RGB{T}}) where T
     # Converting to greyscale
-    image = Gray.(image)
+    image_gray = Gray.(image)
     # Call internal
-    return detector(image)
+    return detector(image_gray)
 end
 
 """
 	threadcalldetect(detector, image)
 Run the april tag detector on a image
 """
-function threadcalldetect(detector::AprilTagDetector, image::Array{T, 2}) where T <: U8Types
+function threadcalldetect(detector::AprilTagDetector, image::AbstractMatrix{T}) where T <: U8Types
 
     if detector.td == C_NULL
         error("AprilTags Detector does not exist")
@@ -234,24 +234,17 @@ end
 #     imbuf = reinterpret(UInt8, image'[:])
 #     return AprilTags.image_u8_t(Int32(cols), Int32(rows), Int32(cols), Base.unsafe_convert(Ptr{UInt8}, imbuf))
 # end
-function convert(::Type{image_u8_t}, image::Array{UInt8, 2})
+function convert(::Type{image_u8_t}, image::AbstractMatrix{UInt8})
 #create image8 opject for april tags
     (rows,cols) = size(image)
-    imbuf = image'[:]
+    imbuf = collect(image')
     return AprilTags.image_u8_t(Int32(cols), Int32(rows), Int32(cols), Base.unsafe_convert(Ptr{UInt8}, imbuf))
 end
-# TODO maybe add for AbstractArray types such as ReinterpretArray
-# function convert(::Type{image_u8_t}, image::AbstractArray{UInt8, 2})
-# #create image8 opject for april tags
-#     @show (rows,cols) = size(image)
-#     imbuf = image'[:]
-#     return AprilTags.image_u8_t(Int32(cols), Int32(rows), Int32(cols), Base.unsafe_convert(Ptr{UInt8}, imbuf))
-# end
 
-function convert(::Type{image_u8_t}, image::Array{T, 2}) where T <: U8Types
+function convert(::Type{image_u8_t}, image::AbstractMatrix{T}) where T <: U8Types
 #create image8 opject for april tags
     (rows,cols) = size(image)
-    imbuf = reinterpret(UInt8, image'[:])
+    imbuf = reinterpret(UInt8, collect(image'))
     return AprilTags.image_u8_t(Int32(cols), Int32(rows), Int32(cols), Base.unsafe_convert(Ptr{UInt8}, imbuf))
 end
 
@@ -272,10 +265,10 @@ function getTagDetections(detections::Ptr{zarray})::Vector{AprilTags.apriltag_de
 end
 
 
-function copyAprilTagDetections(detections::Ptr{zarray})::Vector{AprilTag}
+function copyAprilTagDetections(detections::Ptr{zarray})::Vector{AprilTag{Float64}}
     detzarray = unsafe_load(detections)
     if detzarray.size > 0
-        apriltags = Vector{AprilTag}(undef,detzarray.size)
+        apriltags = Vector{AprilTag{Float64}}(undef,detzarray.size)
         for i=1:detzarray.size
             pointer_to_apriltag_detection_t = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data),i)
             dettag = unsafe_load(pointer_to_apriltag_detection_t)
@@ -283,24 +276,22 @@ function copyAprilTagDetections(detections::Ptr{zarray})::Vector{AprilTag}
             #TODO: implement more tag family stuff, just return family name as a string for now
             family = unsafe_string(unsafe_load(dettag.family).name)
 
-            #Reading homography of tag 1 (transpose for c row major and deepcopy since memory is destoyed by c)
-            voidpointertoH = Base.unsafe_convert(Ptr{Nothing}, dettag.H)
-            # pointer to H matrix
-            nrows = unsafe_load(Ptr{UInt32}(voidpointertoH),1)
-            ncols = unsafe_load(Ptr{UInt32}(voidpointertoH),2)
-            H = deepcopy(unsafe_wrap(Array, Ptr{Cdouble}(voidpointertoH+8), (3,3))')
+            #Reading homography of tag 1 (transpose for c row major and copy since memory is destroyed by c)
+            matd = unsafe_load(dettag.H)
+            H_data = unsafe_wrap(Array, matd.data, (3, 3))
+            H = SMatrix{3,3,Float64,9}(H_data')
 
-            #convert tuples to arrays
-            tagc = collect(dettag.c)
-            tagp = [collect(i) for i in dettag.p]
+            #convert tuples to static vectors
+            tagc = SVector{2,Float64}(dettag.c)
+            tagp = SVector{4,SVector{2,Float64}}(SVector{2,Float64}(pt) for pt in dettag.p)
 
             # apriltags[i] = AprilTags.AprilTag(family, dettag.id, dettag.hamming, dettag.goodness, dettag.decision_margin, H, tagc, tagp)
-            apriltags[i] = AprilTags.AprilTag(family, dettag.id, dettag.hamming, dettag.decision_margin, H, tagc, tagp)
+            apriltags[i] = AprilTags.AprilTag{Float64}(family, dettag.id, dettag.hamming, dettag.decision_margin, H, tagc, tagp)
 
         end
         return apriltags
     else
-        return Vector{AprilTag}()
+        return Vector{AprilTag{Float64}}()
     end
 end
 
@@ -345,7 +336,7 @@ function  getAprilTagImage(tagIndex::Int, tagfamily::TagFamilies = tag36h11; bla
         tagimg[end-1,2:end-1] .= 0x00
     end
 
-    return reinterpret(Gray{N0f8},tagimg)
+    return FixedSizeMatrix(reinterpret(Gray{N0f8},tagimg))
 end
 
 
@@ -488,22 +479,22 @@ Related
 
 `homographytopose`
 """
-function homography_to_pose(H::Matrix{Float64}, 
-                            f_width::Float64, 
-                            f_height::Float64, 
-                            c_width::Float64, 
-                            c_height::Float64; 
-                            taglength::Float64 = 2.0)
+function homography_to_pose(H::AbstractMatrix{T}, 
+                            f_width::Real, 
+                            f_height::Real, 
+                            c_width::Real, 
+                            c_height::Real; 
+                            taglength::Real = 2.0) where {T <: Real}
     # Note that every variable that we compute is proportional to the scale factor of H.
-    R31 = H[3, 1]
-    R32 = H[3, 2]
-    TZ  = H[3, 3]
-    R11 = (H[1, 1] - c_width*R31) / f_width
-    R12 = (H[1, 2] - c_width*R32) / f_width
-    TX  = (H[1, 3] - c_width*TZ)  / f_width
-    R21 = (H[2, 1] - c_height*R31) / f_height
-    R22 = (H[2, 2] - c_height*R32) / f_height
-    TY  = (H[2, 3] - c_height*TZ)  / f_height
+    R31 = T(H[3, 1])
+    R32 = T(H[3, 2])
+    TZ  = T(H[3, 3])
+    R11 = (T(H[1, 1]) - c_width*R31) / f_width
+    R12 = (T(H[1, 2]) - c_width*R32) / f_width
+    TX  = (T(H[1, 3]) - c_width*TZ)  / f_width
+    R21 = (T(H[2, 1]) - c_height*R31) / f_height
+    R22 = (T(H[2, 2]) - c_height*R32) / f_height
+    TY  = (T(H[2, 3]) - c_height*TZ)  / f_height
 
     # compute the scale by requiring that the rotation columns are unit length
     # (Use geometric average of the two length vectors we have)
@@ -533,22 +524,12 @@ function homography_to_pose(H::Matrix{Float64},
     R33 = R11*R22 - R21*R12
 
     # Improve rotation matrix by applying polar decomposition.
-    if (true)
-        # do polar decomposition. This makes the rotation matrix
-        # "proper", but probably increases the reprojection error. An
-        # iterative alignment step would be superior.
-        R = [R11 R12 R13;
-             R21 R22 R23;
-             R31 R32 R33]
+    R_mat = SMatrix{3,3,T,9}(R11, R21, R31, R12, R22, R32, R13, R23, R33)
+    U, S_vals, V = svd(R_mat)
+    R_proper = U * V'
 
-        U, S, V = svd(R)
-        R = U * V'
-    end
-    
-    return  [R    [TX*taglength/2.0;
-                   TY*taglength/2.0;
-                   TZ*taglength/2.0];
-            [0 0 0 1.0]]
+    t_vec = SVector{3,T}(TX*taglength/2.0, TY*taglength/2.0, TZ*taglength/2.0)
+    return AffineMap(R_proper, t_vec)
 end
 
 
@@ -571,29 +552,29 @@ Notes
 - The returned units are those of the tag size, therefore the translational components should be scaled with the tag size.
 - The tag coordinates are from (-1,-1) to (1,1), i.e. the tag size has length of 2 units.
   - Optionally, the tag length (in metre) can be passed to return a scaled value.
-- Returns `::Matrix{Float64}`
+- Returns `::TagPose` (AffineMap)
 ```
 
 Related:
 
 `homography_to_pose`
 """
-function homographytopose(  H::Matrix{Float64}, 
-                            f_width::Float64, 
-                            f_height::Float64, 
-                            c_width::Float64, 
-                            c_height::Float64; 
-                            taglength::Float64 = 2.0)
+function homographytopose(  H::AbstractMatrix{T}, 
+                            f_width::Real, 
+                            f_height::Real, 
+                            c_width::Real, 
+                            c_height::Real; 
+                            taglength::Real = 2.0) where {T <: Real}
     # Note that every variable that we compute is proportional to the scale factor of H.
-    R31 = H[3, 1]
-    R32 = H[3, 2]
-    TZ  = H[3, 3]
-    R11 = (H[1, 1] - c_width*R31) / f_width
-    R12 = (H[1, 2] - c_width*R32) / f_width
-    TX  = (H[1, 3] - c_width*TZ)  / f_width
-    R21 = (H[2, 1] - c_height*R31) / f_height
-    R22 = (H[2, 2] - c_height*R32) / f_height
-    TY  = (H[2, 3] - c_height*TZ)  / f_height
+    R31 = T(H[3, 1])
+    R32 = T(H[3, 2])
+    TZ  = T(H[3, 3])
+    R11 = (T(H[1, 1]) - c_width*R31) / f_width
+    R12 = (T(H[1, 2]) - c_width*R32) / f_width
+    TX  = (T(H[1, 3]) - c_width*TZ)  / f_width
+    R21 = (T(H[2, 1]) - c_height*R31) / f_height
+    R22 = (T(H[2, 2]) - c_height*R32) / f_height
+    TY  = (T(H[2, 3]) - c_height*TZ)  / f_height
 
     # compute the scale by requiring that the rotation columns are unit length
     # (Use geometric average of the two length vectors we have)
@@ -623,22 +604,12 @@ function homographytopose(  H::Matrix{Float64},
     R33 = R11*R22 - R21*R12
 
     # Improve rotation matrix by applying polar decomposition.
-    if (true)
-        # do polar decomposition. This makes the rotation matrix
-        # "proper", but probably increases the reprojection error. An
-        # iterative alignment step would be superior.
-        R = [R11 R12 R13;
-             R21 R22 R23;
-             R31 R32 R33]
+    R_mat = SMatrix{3,3,T,9}(R11, R21, R31, R12, R22, R32, R13, R23, R33)
+    U, S_vals, V = svd(R_mat)
+    R_proper = U * V'
 
-        U, S, V = svd(R)
-        R = U * V'
-    end
-
-    return  [R    [TX*taglength/2.0;
-                   TY*taglength/2.0;
-                   TZ*taglength/2.0];
-            [0 0 0 1.0]]
+    t_vec = SVector{3,T}(TX*taglength/2.0, TY*taglength/2.0, TZ*taglength/2.0)
+    return AffineMap(R_proper, t_vec)
 end
 
 
@@ -648,7 +619,7 @@ end
 Detect tags and calcuate the pose on them.
 """
 function detectAndPose( detector::AprilTagDetector, 
-                        image::Array{T,2}, 
+                        image::AbstractMatrix{T}, 
                         f_width, 
                         f_height, 
                         c_width, 
@@ -673,7 +644,7 @@ function detectAndPose( detector::AprilTagDetector,
 
     detzarray = unsafe_load(detections)
     if detzarray.size > 0
-        poses = Vector{Matrix{Float64}}(undef,detzarray.size)
+        poses = Vector{TagPose{Float64}}(undef,detzarray.size)
         for i=1:detzarray.size
             det = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data),i)
 
@@ -684,22 +655,19 @@ function detectAndPose( detector::AprilTagDetector,
             AprilTags.estimate_pose_for_tag_homography(detinfo, pose_p)
 
             matR = unsafe_load(pose_p.R)
-            R = Matrix{Float64}(undef,3,3)
-            for i = 1:9
-                R[i] = unsafe_load(convert(Ptr{Cdouble},pose_p.R),i+1)
-            end
+            R_data = unsafe_wrap(Array, matR.data, (3,3))
+            R = SMatrix{3,3,Float64,9}(R_data')
 
-            t = Vector{Float64}(undef,3)
-            for i = 1:3
-                t[i] = unsafe_load(convert(Ptr{Cdouble},pose_p.t),i+1)
-            end
+            matT = unsafe_load(pose_p.t)
+            t_data = unsafe_wrap(Array, matT.data, 3)
+            t = SVector{3,Float64}(t_data)
 
-            poses[i] = [R t]
+            poses[i] = AffineMap(R, t)
 
         end
 
     else
-        poses = Vector{Matrix{Float64}}()
+        poses = Vector{TagPose{Float64}}()
     end
 
     #distroy detections memmory
@@ -717,37 +685,42 @@ higher accuracy function that [`homographytopose`](@ref).
 Notes
 - The low level C-library uses the convention `fx==f_width`.
 """
-function estimateTagPoseOrthogonalIteration(tag::AprilTag, 
-                                            f_width::Float64, 
-                                            f_height::Float64, 
-                                            c_width::Float64, 
-                                            c_height::Float64; 
-                                            taglength::Float64 = 2.0, 
-                                            nIters::Int = 50)
+function estimateTagPoseOrthogonalIteration(tag::AprilTag{T}, 
+                                            f_width::Real, 
+                                            f_height::Real, 
+                                            c_width::Real, 
+                                            c_height::Real; 
+                                            taglength::Real = 2.0, 
+                                            nIters::Int = 50) where {T <: Real}
     #
-    Ki = [[1/f_width  0    -c_width/f_width];
-          [0     1/f_height -c_height/f_height];
-          [0     0     1]]
+    Ki = SMatrix{3,3,T,9}(
+        1/f_width, 0.0, 0.0,
+        0.0, 1/f_height, 0.0,
+        -c_width/f_width, -c_height/f_height, 1.0
+    )
     scale = taglength/2.0
 
-    p = (Matd3x1([-scale, scale, 0]),
-         Matd3x1([ scale, scale, 0]),
-         Matd3x1([ scale,-scale, 0]),
-         Matd3x1([-scale,-scale, 0]))
+    p = (Matd3x1([-scale, scale, 0.0]),
+         Matd3x1([ scale, scale, 0.0]),
+         Matd3x1([ scale,-scale, 0.0]),
+         Matd3x1([-scale,-scale, 0.0]))
 
-    v = (Matd3x1(Ki*[tag.p[1];1]), Matd3x1(Ki*[tag.p[2];1]), Matd3x1(Ki*[tag.p[3];1]), Matd3x1(Ki*[tag.p[4];1]))
+    v = (Matd3x1(Ki*SVector{3,T}(tag.p[1][1], tag.p[1][2], 1.0)), 
+         Matd3x1(Ki*SVector{3,T}(tag.p[2][1], tag.p[2][2], 1.0)), 
+         Matd3x1(Ki*SVector{3,T}(tag.p[3][1], tag.p[3][2], 1.0)), 
+         Matd3x1(Ki*SVector{3,T}(tag.p[4][1], tag.p[4][2], 1.0)))
 
-    M = AprilTags.homographytopose(tag.H, f_width, f_height, c_width, c_height, taglength=taglength)
+    pose = AprilTags.homographytopose(tag.H, f_width, f_height, c_width, c_height, taglength=taglength)
 
-    R = (Matd3x3(M[1:3,1:3]), )
-    t = (Matd3x1(M[1:3,4]), )
+    R = (Matd3x3(pose.linear), )
+    t = (Matd3x1(pose.translation), )
 
     err1 = AprilTags.orthogonal_iteration(v, p, t, R, 4, 50)
 
     R2p = AprilTags.fix_pose_ambiguities(v, p, t[1], R[1], 4)
     R2 = (unsafe_load(R2p), )
 
-    t2 = (Matd3x1([0.,0,0]), )
+    t2 = (Matd3x1([0.0, 0.0, 0.0]), )
     if R2 != C_NULL
         err2 = AprilTags.orthogonal_iteration(v, p, t2, R2, 4, 50)
     else
@@ -755,26 +728,22 @@ function estimateTagPoseOrthogonalIteration(tag::AprilTag,
     end
 
     # pack a bit better
-    sol1R = Matrix{Float64}(undef,3,3)
-    sol1R'[:] .= R[1].data
+    R1 = SMatrix{3,3,T,9}(R[1].data)'
+    t1 = SVector{3,T}(t[1].data)
+    sol1 = AffineMap(R1, t1)
 
-    sol1t = [t[1].data...]
+    R2_mat = SMatrix{3,3,T,9}(R2[1].data)'
+    t2_vec = SVector{3,T}(t2[1].data)
+    sol2 = AffineMap(R2_mat, t2_vec)
 
-    sol2R = Matrix{Float64}(undef,3,3)
-    sol2R'[:] .= R2[1].data
-
-    sol2t = [t2[1].data...]
-
-
-    return [sol1R sol1t], err1, [sol2R sol2t], err2
+    return sol1, err1, sol2, err2
 end
 
 
-function calculate_F(v)
+function calculate_F(v::SVector{3,T}) where {T <: Real}
     outer_product = v*v'
-    inner_product = v'*v
-    outer_product /= inner_product[1]
-    return outer_product
+    inner_product = dot(v, v)
+    return outer_product / inner_product
 end
 
 
@@ -783,61 +752,55 @@ end
 
 Utility function that iterates to make vectors orthogonal?
 """
-function orthogonalIteration(v, p, t, R, n_points=4, n_steps=50)
+function orthogonalIteration(v::SVector{4,SVector{3,T}}, p::SVector{4,SVector{3,T}}, t::SVector{3,T}, R::SMatrix{3,3,T,9}, n_points=4, n_steps=50) where {T <: Real}
 
     p_mean = mean(p)
 
-    p_res = [pp - p_mean for pp in p]
+    p_res = SVector{4,SVector{3,T}}(pp - p_mean for pp in p)
 
     # Compute M1_inv.
-    F = calculate_F.(v)
+    F = SVector{4,SMatrix{3,3,T,9}}(calculate_F(vv) for vv in v)
 
     avg_F = mean(F)
 
-    M1 = I - avg_F
+    M1 = SMatrix{3,3,T,9}(I) - avg_F
     M1_inv = inv(M1)
 
-    prev_error = 1e9
+    prev_error = T(1e9)
 
     # Iterate.
     for i=1:n_steps
         # Calculate translation.
-        M2 = [0.,0,0]
+        M2 = SVector{3,T}(0.0, 0.0, 0.0)
         for j=1:n_points
-            M2 += (F[j] - I) * R * p[j]   #(M - M)*M*M,
+            M2 += (F[j] - SMatrix{3,3,T,9}(I)) * R * p[j]
         end
         M2 /= n_points
 
         t = M1_inv * M2
 
         #calcutate rotation
-        q = Vector{Vector{Float64}}(undef, 4)
-
-        for j=1:n_points
-            q[j] = F[j]*(R*p[j] + t)   #"M*(M*M+M)"
-        end
+        q = SVector{4,SVector{3,T}}(F[j]*(R*p[j] + t) for j=1:n_points)
         q_mean = mean(q)
 
-        M3 = zeros(3,3)
-        for j=1:n_points
-            M3 += (q[j] - q_mean) * p_res[j]'  #"(M-M)*M'", q[j], q_mean, p_res[j]
-        end
+        # sum over points: (q[j] - q_mean) * p_res[j]'
+        M3 = sum((q[j] - q_mean) * p_res[j]' for j=1:n_points)
         M3_svd = svd(M3)
 
-        R = M3_svd.U * M3_svd.V' #"M*M'", M3_svd.U, M3_svd.V
+        R = M3_svd.U * M3_svd.V'
 
-        err = 0.0
+        err = T(0.0)
 
         for j = 1:4
-            err_vec =  (I - F[j]) * (R*p[j] + t)  #("(M-M)(MM+M)", I3, F[i], *R, p[i], *t);
-            err +=  err_vec'*err_vec #("M'M", err_vec, err_vec));
+            err_vec =  (SMatrix{3,3,T,9}(I) - F[j]) * (R*p[j] + t)
+            err +=  dot(err_vec, err_vec)
         end
 
         prev_error = err
 
     end
 
-    return [R t], prev_error
+    return AffineMap(R, t), prev_error
 end
 
 """
@@ -853,40 +816,49 @@ Notes
 - The low level C-library uses `fx=f_width`.
 """
 function tagOrthogonalIteration(corners::Union{<:AbstractVector,<:Tuple},
-                                H::Matrix{<:Real}, 
+                                H::AbstractMatrix{T}, 
                                 f_width::Real, 
                                 f_height::Real, 
                                 c_width::Real, 
                                 c_height::Real; 
                                 taglength::Real = 2.0, 
-                                nIters::Int = 50 )
+                                nIters::Int = 50 ) where {T <: Real}
     #
-    Ki = [[1/f_width  0    -c_width/f_width];
-          [0     1/f_height -c_height/f_height];
-          [0     0     1]]
+    Ki = SMatrix{3,3,T,9}(
+        1/f_width, 0.0, 0.0,
+        0.0, 1/f_height, 0.0,
+        -c_width/f_width, -c_height/f_height, 1.0
+    )
     scale = taglength/2.0
 
-    p = [[-scale, scale, 0],
-         [ scale, scale, 0],
-         [ scale,-scale, 0],
-         [-scale,-scale, 0]]
+    p = SVector{4,SVector{3,T}}(
+        SVector{3,T}(-scale, scale, 0.0),
+        SVector{3,T}(scale, scale, 0.0),
+        SVector{3,T}(scale,-scale, 0.0),
+        SVector{3,T}(-scale,-scale, 0.0)
+    )
 
-    v = [Ki*[corners[1]...;1], Ki*[corners[2]...;1], Ki*[corners[3]...;1], Ki*[corners[4]...;1]]
+    v = SVector{4,SVector{3,T}}(
+        Ki*SVector{3,T}(corners[1][1], corners[1][2], 1.0),
+        Ki*SVector{3,T}(corners[2][1], corners[2][2], 1.0),
+        Ki*SVector{3,T}(corners[3][1], corners[3][2], 1.0),
+        Ki*SVector{3,T}(corners[4][1], corners[4][2], 1.0)
+    )
 
-    # must have floats before doing ccall
-    M = homographytopose(H, float(f_width), float(f_height), float(c_width), float(c_height), taglength=taglength)
+    # must have floats before doing homographytopose
+    pose = homographytopose(H, T(f_width), T(f_height), T(c_width), T(c_height), taglength=taglength)
 
-    R = M[1:3,1:3]
-    t = M[1:3,4]
+    R = pose.linear
+    t = pose.translation
 
     return AprilTags.orthogonalIteration(v, p, t, R, 4, nIters)
 end
 
-tagOrthogonalIteration( tag::AprilTag, 
-                        f_width::Float64, 
-                        f_height::Float64, 
-                        c_width::Float64, 
-                        c_height::Float64; 
-                        taglength::Float64 = 2.0, 
-                        nIters::Int = 50 ) = tagOrthogonalIteration(tag.p, tag.H, f_width, f_height, c_width, c_height, taglength=taglength, nIters=nIters)
+tagOrthogonalIteration( tag::AprilTag{T}, 
+                        f_width::Real, 
+                        f_height::Real, 
+                        c_width::Real, 
+                        c_height::Real; 
+                        taglength::Real = 2.0, 
+                        nIters::Int = 50 ) where {T <: Real} = tagOrthogonalIteration(tag.p, tag.H, f_width, f_height, c_width, c_height, taglength=taglength, nIters=nIters)
 #

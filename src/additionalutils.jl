@@ -11,9 +11,9 @@ Draw axes and tag IDs on an image based on detections in `tags`.
 Notes
 - Will self detect tags, or requires user to pass in `tags` detections.
 """
-function drawTags!(imageCol::AbstractArray{<:AbstractRGB,2}, 
-                   K::AbstractArray{<:Real,2},
-                   tags::AbstractArray{AprilTag,1} = AprilTagDetector()(imageCol),
+function drawTags!(imageCol::AbstractMatrix{<:AbstractRGB}, 
+                   K::AbstractMatrix{<:Real},
+                   tags::AbstractVector{<:AprilTag} = AprilTagDetector()(imageCol),
                    drawReticle::Bool = false )
   #
   # draw the tag number for each tag
@@ -34,7 +34,7 @@ Draw axes and tag IDs on an image based on detections in `tags`.
 Notes
 - Will self detect tags, or requires user to pass in `tags` detections.
 """
-drawTags(imageCol::AbstractArray{<:AbstractRGB,2},K::AbstractArray{<:Real,2},tags::AbstractArray{AprilTag,1}=AprilTagDetector()(imageCol),drawReticle::Bool=false ) = drawTags!(RGB.(imageCol),K,tags,drawReticle)
+drawTags(imageCol::AbstractMatrix{<:AbstractRGB},K::AbstractMatrix{<:Real},tags::AbstractVector{<:AprilTag}=AprilTagDetector()(imageCol),drawReticle::Bool=false ) = drawTags!(RGB.(imageCol),K,tags,drawReticle)
 # Convert image to RGB
 # imageCol = RGB.(image)
 

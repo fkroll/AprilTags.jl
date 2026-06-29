@@ -106,12 +106,12 @@ PixPos(pix::UInt8, pos::Array{Float64,1}) = PixPos(pix, (x=pos[1], y=pos[2], z=p
         # display(pose)
 
         if idx != 2 #FIXME? skip this test on 2 (bigger offsets like this one fails test), homographytopose is just not accurate enough
-            @test all(isapprox.(pose[1:3,1:3], cTw[1:3,1:3], atol = 0.05))
-            @test all(isapprox.(pose[1:3,4], cTw[1:3,4], atol = 10.))
+            @test pose.linear ≈ cTw[1:3,1:3] atol = 0.05
+            @test pose.translation ≈ cTw[1:3,4] atol = 10.
         end
         pose,err1 = tagOrthogonalIteration(tags[1], fx, fy, cx, cy, taglength = 160.)
-        @test all(isapprox.(pose[1:3,1:3], cTw[1:3,1:3], atol = 0.05))
-        @test all(isapprox.(pose[1:3,4], cTw[1:3,4], atol = 10.))
+        @test pose.linear ≈ cTw[1:3,1:3] atol = 0.05
+        @test pose.translation ≈ cTw[1:3,4] atol = 10.
 
     end
 

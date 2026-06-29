@@ -500,7 +500,7 @@ mutable struct Matd4x4
     ncols::UInt32
     data::NTuple{16,Cdouble}
     Matd4x4() = new(4,4,NTuple{16,Cdouble}(Matrix{Float64}(undef,4,4)))
-    Matd4x4(M::Matrix{Float64}) = new(4,4,NTuple{16,Cdouble}(M'))#TODO test if order is correct
+    Matd4x4(M::AbstractMatrix{<:Real}) = new(4,4,NTuple{16,Cdouble}(M'))#TODO test if order is correct
 end
 
 mutable struct Matd3x3
@@ -508,7 +508,7 @@ mutable struct Matd3x3
     ncols::UInt32
     data::NTuple{9,Cdouble}
     Matd3x3() = new(3,3,NTuple{9,Cdouble}(Matrix{Float64}(undef,3,3)))
-    Matd3x3(M::Matrix{Float64}) = new(3,3,NTuple{9,Cdouble}(M'))#TODO test if order is correct
+    Matd3x3(M::AbstractMatrix{<:Real}) = new(3,3,NTuple{9,Cdouble}(M'))#TODO test if order is correct
 end
 
 mutable struct Matd3x1
@@ -516,7 +516,7 @@ mutable struct Matd3x1
     ncols::UInt32
     data::NTuple{3,Cdouble}
     Matd3x1() = new(3,1,NTuple{3,Cdouble}(Matrix{Float64}(undef,3,1)))
-    Matd3x1(V::Vector{Float64}) = new(3,1,NTuple{3,Cdouble}(V))
+    Matd3x1(V::AbstractVector{<:Real}) = new(3,1,NTuple{3,Cdouble}(V))
 end
 
 # void estimate_pose_for_tag_homography(apriltag_detection_info_t* info, apriltag_pose_t* pose);

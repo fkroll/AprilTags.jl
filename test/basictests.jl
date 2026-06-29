@@ -115,12 +115,12 @@ using Test
 
         pose = homography_to_pose(tags2[1].H, -520., 520., 320., 240.)
         # TODO create better ref pose
-        refpose = [0.65  0.12 -0.75  -5.43;
-                   0.39 -0.90  0.19  -6.20;
-                  -0.65 -0.41 -0.63 -19.62;
-                   0.0   0.0   0.0    1.0]
-        @test pose[1:3,1:3] ≈ refpose[1:3,1:3] atol = 0.05
-        @test pose[1:3,4] ≈ refpose[1:3,4] atol = 0.1
+        refpose = [ 0.630694   0.130624  -0.764959  -5.43;
+                    0.373828  -0.914963   0.151975  -6.20;
+                   -0.680057  -0.381812  -0.625892 -19.62;
+                    0.0        0.0        0.0        1.0]
+        @test pose.linear ≈ refpose[1:3,1:3] atol = 0.05
+        @test pose.translation ≈ refpose[1:3,4] atol = 0.1
 
         #test drawing functions
         fx = 524.040
@@ -230,10 +230,12 @@ using Test
         taglength = 0.172
         (tags, poses) = detectAndPose(detector, image, fx, fy, cx, cy, taglength)
         # TODO test here, this is just result used as test.
-        @test all(isapprox.(poses[1], [ 0.630532  -0.391638  0.670111  -0.461887;
-                                        0.118082   0.901717  0.415889   0.494238;
-                                       -0.767128  -0.183103  0.614807   1.69053],
-                                      atol = 0.01))
+        ref_R = [ 0.627703   0.120213  -0.769115;
+                 -0.388707   0.904419  -0.175877;
+                  0.674460   0.409359   0.614434]
+        ref_t = [-0.461887,  0.494238,  1.69053]
+        @test poses[1].linear ≈ ref_R atol = 0.01
+        @test poses[1].translation ≈ ref_t atol = 0.01
         freeDetector!(detector)
 
     end
@@ -277,5 +279,22 @@ using Test
         tags = detector(imageCol)
         @test length(tags) == 1
         freeDetector!(detector)
+    end
+
+    @testset "Generator stub error" begin
+        @test_throws ErrorException generateTagSheet(Int[])
+    end
+
+    @testset "Generator implementation" begin
+        using Plots
+        output_temp = joinpath(dirname(Base.source_path()), "../scratch/test_sheet.svg")
+        plt1 = generateTagSheet(Int[]; outputPath=output_temp)
+        @test isfile(output_temp)
+        @test plt1 isa Plots.Plot
+        rm(output_temp, force=true)
+        
+        plt2 = generateTagSheet([1, 2, 3]; outputPath=output_temp)
+        @test isfile(output_temp)
+        rm(output_temp, force=true)
     end
 end

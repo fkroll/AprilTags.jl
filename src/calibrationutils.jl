@@ -97,8 +97,7 @@ function calcCornerProjectionsAprilTags!(cimg_::AbstractMatrix{<:Colorant},
                                                   c_width, 
                                                   c_height, 
                                                   taglength = taglength)  
-    #
-    cTt_ = [cTt; 0 0 0 1]
+    cTt_ = [cTt.linear cTt.translation; SVector{4,Float64}(0.0, 0.0, 0.0, 1.0)']
     idx = findfirst(x->x==tags_[j].id, boardPattern)
     
     # go through all the tags on the grid, to compare against this one idx tags[j]
