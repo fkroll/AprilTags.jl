@@ -13,3 +13,4 @@ deps/usr
 # Local machine-specific overrides (not for committing)
 LocalPreferences.toml
 local_apriltag_artifact/
+.DS_Store
