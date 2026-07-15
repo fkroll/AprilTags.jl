@@ -286,11 +286,11 @@ using Test
     end
 
     @testset "Generator implementation" begin
-        using Plots
+        using CairoMakie, Makie
         output_temp = joinpath(dirname(Base.source_path()), "../scratch/test_sheet.svg")
         plt1 = generateTagSheet(Int[]; outputPath=output_temp)
         @test isfile(output_temp)
-        @test plt1 isa Plots.Plot
+        @test plt1 isa Makie.Figure
         rm(output_temp, force=true)
         
         plt2 = generateTagSheet([1, 2, 3]; outputPath=output_temp)

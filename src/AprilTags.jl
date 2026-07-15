@@ -67,7 +67,7 @@ include("additionalutils.jl")
 include("calibrationutils.jl")
 
 function generateTagSheet(args...; kwargs...)
-    error("generateTagSheet is not loaded. Please run `using Plots` to load this functionality.")
+    error("generateTagSheet is not loaded. Please run `using Makie` to load this functionality.")
 end
 
 function __init__()
