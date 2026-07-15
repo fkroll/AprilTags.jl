@@ -296,5 +296,10 @@ using Test
         plt2 = generateTagSheet([1, 2, 3]; outputPath=output_temp)
         @test isfile(output_temp)
         rm(output_temp, force=true)
+
+        plt3 = generateTagSheet([1, 2, 3]; outputPath=output_temp, boxSizeMm=20.0)
+        @test isfile(output_temp)
+        @test plt3 isa Makie.Figure
+        rm(output_temp, force=true)
     end
 end

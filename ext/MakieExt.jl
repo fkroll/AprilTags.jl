@@ -10,7 +10,8 @@ function generateTagSheet(
     spacingMm::Real=10.0,
     marginMm::Real=15.0,
     outputPath::String="tag_sheet.svg",
-    tagFamily::TagFamilies=tag36h11
+    tagFamily::TagFamilies=tag36h11,
+    boxSizeMm::Real=0.0
 )
     page_w = 210.0
     page_h = 297.0
@@ -78,18 +79,37 @@ function generateTagSheet(
         cWidth = 1.0
         cColor = :black
 
-        # Corner tick marks
-        lines!(ax, [xStart - cLen, xStart - 1.0], [yStart, yStart], color = cColor, linewidth = cWidth)
-        lines!(ax, [xStart, xStart], [yStart - cLen, yStart - 1.0], color = cColor, linewidth = cWidth)
+        # Align crop marks with the outer box if defined, otherwise the tag boundaries
+        bx_start = xStart
+        by_start = yStart
+        b_sz = total_sz
+        if boxSizeMm > 0.0
+            bx_start = xStart + (total_sz - boxSizeMm) / 2
+            by_start = yStart + (total_sz - boxSizeMm) / 2
+            b_sz = boxSizeMm
+            
+            # Draw the outer box
+            bx = [bx_start, bx_start + b_sz, bx_start + b_sz, bx_start, bx_start]
+            by = [by_start, by_start, by_start + b_sz, by_start + b_sz, by_start]
+            lines!(ax, bx, by, color = :black, linewidth = 0.5)
+        end
 
-        lines!(ax, [xStart + total_sz + 1.0, xStart + total_sz + cLen], [yStart, yStart], color = cColor, linewidth = cWidth)
-        lines!(ax, [xStart + total_sz, xStart + total_sz], [yStart - cLen, yStart - 1.0], color = cColor, linewidth = cWidth)
+        # Corner tick marks (aligning with bx_start/by_start/b_sz with a 1mm gap, not touching)
+        # Top-left corner
+        lines!(ax, [bx_start - cLen, bx_start - 1.0], [by_start, by_start], color = cColor, linewidth = cWidth)
+        lines!(ax, [bx_start, bx_start], [by_start - cLen, by_start - 1.0], color = cColor, linewidth = cWidth)
 
-        lines!(ax, [xStart - cLen, xStart - 1.0], [yStart + total_sz, yStart + total_sz], color = cColor, linewidth = cWidth)
-        lines!(ax, [xStart, xStart], [yStart + total_sz + 1.0, yStart + total_sz + cLen], color = cColor, linewidth = cWidth)
+        # Top-right corner
+        lines!(ax, [bx_start + b_sz + 1.0, bx_start + b_sz + cLen], [by_start, by_start], color = cColor, linewidth = cWidth)
+        lines!(ax, [bx_start + b_sz, bx_start + b_sz], [by_start - cLen, by_start - 1.0], color = cColor, linewidth = cWidth)
 
-        lines!(ax, [xStart + total_sz + 1.0, xStart + total_sz + cLen], [yStart + total_sz, yStart + total_sz], color = cColor, linewidth = cWidth)
-        lines!(ax, [xStart + total_sz, xStart + total_sz], [yStart + total_sz + 1.0, yStart + total_sz + cLen], color = cColor, linewidth = cWidth)
+        # Bottom-left corner
+        lines!(ax, [bx_start - cLen, bx_start - 1.0], [by_start + b_sz, by_start + b_sz], color = cColor, linewidth = cWidth)
+        lines!(ax, [bx_start, bx_start], [by_start + b_sz + 1.0, by_start + b_sz + cLen], color = cColor, linewidth = cWidth)
+
+        # Bottom-right corner
+        lines!(ax, [bx_start + b_sz + 1.0, bx_start + b_sz + cLen], [by_start + b_sz, by_start + b_sz], color = cColor, linewidth = cWidth)
+        lines!(ax, [bx_start + b_sz, bx_start + b_sz], [by_start + b_sz + 1.0, by_start + b_sz + cLen], color = cColor, linewidth = cWidth)
 
         text!(ax,
             xStart + total_sz / 2.0,
