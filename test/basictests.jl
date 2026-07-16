@@ -40,20 +40,20 @@ using Test
         apriltag_detector_add_family(td, tf)
 
         #create image8 object for april tags
-        image8 = convert(AprilTags.image_u8_t, image)
+        image8, imbuf = AprilTags.get_image_u8(image)
 
-        # run detector on image
-        detections = apriltag_detector_detect(td, image8)
+        # run detector on image preserving the buffer
+        detections = GC.@preserve imbuf apriltag_detector_detect(td, image8)
 
         # copy detections
         tags = getTagDetections(detections)
 
         #extract tag centres
         cpoints = map(tag->[tag.c[2],tag.c[1]],tags)
-        @test cpoints ≈ refpoints atol=0.5
+        @test cpoints ≈ refpoints atol=0.5
 
-        # test convertions
-        image8_from_u8 = convert(AprilTags.image_u8_t, reinterpret(UInt8, image)[:,:])
+        # test conversions
+        image8_from_u8, imbuf_from_u8 = AprilTags.get_image_u8(reinterpret(UInt8, image)[:,:])
         @test image8_from_u8.width == image8.width
         @test image8_from_u8.height == image8.height
         @test image8_from_u8.stride == image8.stride
@@ -63,6 +63,33 @@ using Test
         # Cleanup: free the detector and tag family when done.
         apriltag_detector_destroy(td)
         tag36h11_destroy(tf)
+    end
+
+    @testset "Raw Pointer Interface" begin
+        detector = AprilTagDetector()
+        
+        # Prepare contiguous UInt8 memory for a transposed image to simulate raw camera feed
+        img_u8 = reinterpret(UInt8, image)[:,:]
+        (rows, cols) = size(img_u8)
+        img_u8_contig = collect(img_u8') # contiguous row-major representation in memory
+        
+        # Test raw pointer detection
+        buf_ptr = pointer(img_u8_contig)
+        tags_raw = detector(buf_ptr, cols, rows, cols)
+        @test length(tags_raw) == 3
+        cpoints_raw = map(tag->[tag.c[2],tag.c[1]], tags_raw)
+        @test cpoints_raw ≈ refpoints atol=0.5
+
+        # Test threadcall raw pointer detection
+        tags_raw_tc = threadcalldetect(detector, buf_ptr, cols, rows, cols)
+        @test length(tags_raw_tc) == 3
+
+        # Test detectAndPose raw pointer detection
+        tags_pose_raw, poses_raw = detectAndPose(detector, buf_ptr, cols, rows, cols, -520.0, 520.0, 320.0, 240.0, 2.0)
+        @test length(tags_pose_raw) == 3
+        @test length(poses_raw) == 3
+
+        freeDetector!(detector)
     end
 
     @testset "High-level API" begin

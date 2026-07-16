@@ -550,3 +550,7 @@ function fix_pose_ambiguities(v::NTuple{4,Matd3x1}, p::NTuple{4,Matd3x1}, t::Mat
             (Ptr{Ptr{matd_t}}, Ptr{Ptr{matd_t}}, Ptr{matd_t}, Ptr{matd_t}, Cint),
             vp, pp, tp, Rp, n_points)
 end
+
+function matd_destroy(m::Ptr)
+    ccall((:matd_destroy, libapriltag), Nothing, (Ptr{Cvoid},), m)
+end

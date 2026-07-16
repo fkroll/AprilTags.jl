@@ -54,6 +54,7 @@ apriltag_detector_detect,
 apriltag_detections_destroy,
 apriltag_detector_destroy,
 threadcall_apriltag_detector_detect,
+matd_destroy,
 
 #drawing and plotting
 drawTagBox!,
