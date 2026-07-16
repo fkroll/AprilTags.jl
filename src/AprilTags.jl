@@ -13,21 +13,13 @@ const TagPose{T} = AffineMap{SMatrix{3,3,T,9}, SVector{3,T}}
 
 
 # Resolve the libapriltag library path.
-# On platforms where AprilTags_jll has no pre-built binary (e.g. aarch64-apple-darwin /
-# Apple Silicon), fall back to a path supplied via LocalPreferences.toml.
-# To set a local path, run:
-#   using Preferences
-#   set_preferences!("AprilTags_jll", "libapriltag_path" => "/path/to/libapriltag.dylib"; force=true)
-const libapriltag = if AprilTags_jll.is_available()
-    AprilTags_jll.libapriltag
-else
-    let pref = @load_preference("libapriltag_path", nothing)
-        if pref !== nothing
-            pref
-        else
-            # Last-resort: let the OS dynamic linker find it
-            "libapriltag"
-        end
+# Always use the preferences version!
+const libapriltag =  let pref = @load_preference("libapriltag_path", nothing)
+    if pref !== nothing
+        pref
+    else
+        # Last-resort: let the OS dynamic linker find it
+        "libapriltag"
     end
 end
 
