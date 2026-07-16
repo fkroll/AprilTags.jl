@@ -1,6 +1,5 @@
 module AprilTags
 
-using AprilTags_jll
 using Preferences
 using Requires
 using DocStringExtensions
