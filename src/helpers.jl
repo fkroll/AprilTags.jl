@@ -177,6 +177,9 @@ function (detector::AprilTagDetector)(buf::Ptr{UInt8}, width::Integer, height::I
     if detector.td == C_NULL
         error("AprilTags Detector does not exist")
     end
+    if stride < width
+        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
+    end
 
     image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)
 
@@ -231,6 +234,9 @@ Run the april tag detector on a raw UInt8 pointer with zero copy using threadcal
 function threadcalldetect(detector::AprilTagDetector, buf::Ptr{UInt8}, width::Integer, height::Integer, stride::Integer)
     if detector.td == C_NULL
         error("AprilTags Detector does not exist")
+    end
+    if stride < width
+        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
     end
 
     image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)
@@ -759,6 +765,9 @@ function detectAndPose( detector::AprilTagDetector,
                         taglength )
     if detector.td == C_NULL
         error("AprilTags Detector does not exist")
+    end
+    if stride < width
+        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
     end
 
     image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)

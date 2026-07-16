@@ -89,6 +89,48 @@ using Test
         @test length(tags_pose_raw) == 3
         @test length(poses_raw) == 3
 
+    end
+
+    @testset "Dimension Flip and Transpose Tests" begin
+        # Original parent image: width 2472, height 400 (Julia size: 400 rows, 2472 cols)
+        parent_img = fill(Gray{N0f8}(0.5), 400, 2472)
+        
+        # Render tag 0
+        tagimg = getAprilTagImage(0)
+        scaled_tag = kron(reinterpret(UInt8, tagimg), ones(UInt8, 8, 8))
+        st_w, st_h = size(scaled_tag)
+        parent_img[100:100+st_w-1, 100:100+st_h-1] = Gray.(reinterpret(N0f8, scaled_tag))
+
+        detector = AprilTagDetector()
+
+        # 1. Test standard detection on parent_img (width 2472, height 400)
+        tags_parent = detector(parent_img)
+        @test length(tags_parent) == 1
+
+        # 2. Test transpose using transpose operator (dims switched: 2472 rows, 400 cols)
+        transposed_img = parent_img'
+        tags_transposed = detector(transposed_img)
+        # Note: transposed image is mirrored, so AprilTag won't match/detect, but it must NOT crash
+        @test length(tags_transposed) == 0
+
+        # 3. Test raw pointer interface with correct stride/dimensions
+        img_u8 = reinterpret(UInt8, parent_img)[:,:]
+        img_u8_contig = collect(img_u8') # contiguous row-major buffer of parent_img
+        buf_ptr = pointer(img_u8_contig)
+        
+        # Correct dimensions for parent_img: width=2472, height=400, stride=2472
+        tags_raw = detector(buf_ptr, 2472, 400, 2472)
+        @test length(tags_raw) == 1
+
+        # Flipped dimensions: width=400, height=2472, stride=400 (safe buffer access: height * stride = 988800)
+        tags_raw_flipped = detector(buf_ptr, 400, 2472, 400)
+        @test length(tags_raw_flipped) == 0 # scrambled, no tags, but safe (no crash)
+
+        # Test stride < width throws ArgumentError
+        @test_throws ArgumentError detector(buf_ptr, 2472, 400, 400)
+        @test_throws ArgumentError threadcalldetect(detector, buf_ptr, 2472, 400, 400)
+        @test_throws ArgumentError detectAndPose(detector, buf_ptr, 2472, 400, 400, -520.0, 520.0, 320.0, 240.0, 2.0)
+
         freeDetector!(detector)
     end
 
