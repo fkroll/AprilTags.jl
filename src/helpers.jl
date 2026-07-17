@@ -12,8 +12,8 @@ struct AprilTag{T <: Real}
     family::String
     "The decoded ID of the tag."
     id::Int
-    """How many error bits were corrected? 
-       Note: accepting large numbers of corrected errors leads to greatly increased false positive rates. 
+    """How many error bits were corrected?
+       Note: accepting large numbers of corrected errors leads to greatly increased false positive rates.
        NOTE: As of this implementation, the detector cannot detect tags with a Hamming distance greater than 2."""
     hamming::Int
     """A measure of the quality of the binary decoding process: the average difference between the intensity of a data bit versus
@@ -252,7 +252,7 @@ function freeDetector!(detector::AprilTagDetector, verbose::Bool=true)
         verbose && @warn("AprilTags family does not exist")
     else
         # use this one for now, c code is similar
-        tag36h11_destroy(detector.tf) 
+        tag36h11_destroy(detector.tf)
     end
 
     #TODO: how do I destroy the detector itself, for now just nulls
@@ -511,8 +511,8 @@ Notes
   - Axes start top left-corner of the image plane (i.e. the image-frame):
   - `width` is from left to right,
   - `height` is from top downward.
-- The low-level `ccall` wrapped C-library underneath uses the convention (i.e. the camera-frame): 
-  - `fx == f_width`, 
+- The low-level `ccall` wrapped C-library underneath uses the convention (i.e. the camera-frame):
+  - `fx == f_width`,
   - `cy == c_height`, and
   - C-library camara coordinate system: camera looking along positive Z axis with `x` to the right and `y` down.
     - C-library internally follows: https://docs.opencv.org/3.4/d9/d0c/group__calib3d.html
@@ -526,11 +526,11 @@ Related
 
 `homographytopose`
 """
-function homography_to_pose(H::AbstractMatrix{T}, 
-                            f_width::Real, 
-                            f_height::Real, 
-                            c_width::Real, 
-                            c_height::Real; 
+function homography_to_pose(H::AbstractMatrix{T},
+                            f_width::Real,
+                            f_height::Real,
+                            c_width::Real,
+                            c_height::Real;
                             taglength::Real = 2.0) where {T <: Real}
     # Note that every variable that we compute is proportional to the scale factor of H.
     R31 = T(H[3, 1])
@@ -590,8 +590,8 @@ Notes
   - Axes start top left-corner of the image plane (i.e. the image-frame):
   - `width` is from left to right,
   - `height` is from top downward.
-- The low-level `ccall` wrapped C-library underneath uses the convention (i.e. the camera-frame): 
-  - `fx == f_width`, 
+- The low-level `ccall` wrapped C-library underneath uses the convention (i.e. the camera-frame):
+  - `fx == f_width`,
   - `cy == c_height`, and
   - C-library camara coordinate system: camera looking along positive Z axis with `x` to the right and `y` down.
     - C-library internally follows: https://docs.opencv.org/3.4/d9/d0c/group__calib3d.html
@@ -606,11 +606,11 @@ Related:
 
 `homography_to_pose`
 """
-function homographytopose(  H::AbstractMatrix{T}, 
-                            f_width::Real, 
-                            f_height::Real, 
-                            c_width::Real, 
-                            c_height::Real; 
+function homographytopose(  H::AbstractMatrix{T},
+                            f_width::Real,
+                            f_height::Real,
+                            c_width::Real,
+                            c_height::Real;
                             taglength::Real = 2.0) where {T <: Real}
     # Note that every variable that we compute is proportional to the scale factor of H.
     R31 = T(H[3, 1])
@@ -707,12 +707,12 @@ end
 
 Detect tags and calculate the pose on them.
 """
-function detectAndPose( detector::AprilTagDetector, 
-                        image::AbstractMatrix{T}, 
-                        f_width, 
-                        f_height, 
-                        c_width, 
-                        c_height, 
+function detectAndPose( detector::AprilTagDetector,
+                        image::AbstractMatrix{T},
+                        f_width,
+                        f_height,
+                        c_width,
+                        c_height,
                         taglength;
                         threadcall::Bool=false ) where T <: U8Types
     _run_detection(detector, image; threadcall=threadcall) do detections
@@ -727,15 +727,15 @@ end
 
 Detect tags and calculate their pose on a raw UInt8 pointer with zero copy.
 """
-function detectAndPose( detector::AprilTagDetector, 
-                        buf::Ptr{UInt8}, 
-                        width::Integer, 
-                        height::Integer, 
-                        stride::Integer, 
-                        f_width, 
-                        f_height, 
-                        c_width, 
-                        c_height, 
+function detectAndPose( detector::AprilTagDetector,
+                        buf::Ptr{UInt8},
+                        width::Integer,
+                        height::Integer,
+                        stride::Integer,
+                        f_width,
+                        f_height,
+                        c_width,
+                        c_height,
                         taglength;
                         threadcall::Bool=false )
     _run_detection(detector, buf, width, height, stride; threadcall=threadcall) do detections
@@ -762,11 +762,11 @@ end
     for i in 1:n
         det_ptr = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data), i)
         dettag = unsafe_load(det_ptr)
-        
+
         # 1. Extract AprilTag struct
         name_ptr = unsafe_load(dettag.family).name
         family = _get_family_name(name_ptr)
-        
+
         # Extract homography
         matd = unsafe_load(dettag.H)
         H = SMatrix{3,3,Float64,9}(
@@ -774,7 +774,7 @@ end
             unsafe_load(matd.data, 2), unsafe_load(matd.data, 5), unsafe_load(matd.data, 8),
             unsafe_load(matd.data, 3), unsafe_load(matd.data, 6), unsafe_load(matd.data, 9)
         )
-        
+
         tagc = SVector{2,Float64}(dettag.c)
         tagp = SVector{4,SVector{2,Float64}}(
             SVector{2,Float64}(dettag.p[1][1], dettag.p[1][2]),
@@ -782,9 +782,9 @@ end
             SVector{2,Float64}(dettag.p[3][1], dettag.p[3][2]),
             SVector{2,Float64}(dettag.p[4][1], dettag.p[4][2])
         )
-        
+
         tags_out[i] = AprilTag{Float64}(family, dettag.id, dettag.hamming, dettag.decision_margin, H, tagc, tagp)
-        
+
         # 2. Extract pose
         poses_out[i] = _estimate_pose_single(det_ptr, f_width, f_height, c_width, c_height, taglength, pose_p)
     end
@@ -854,12 +854,12 @@ higher accuracy function that [`homographytopose`](@ref).
 Notes
 - The low level C-library uses the convention `fx==f_width`.
 """
-function estimateTagPoseOrthogonalIteration(tag::AprilTag{T}, 
-                                            f_width::Real, 
-                                            f_height::Real, 
-                                            c_width::Real, 
-                                            c_height::Real; 
-                                            taglength::Real = 2.0, 
+function estimateTagPoseOrthogonalIteration(tag::AprilTag{T},
+                                            f_width::Real,
+                                            f_height::Real,
+                                            c_width::Real,
+                                            c_height::Real;
+                                            taglength::Real = 2.0,
                                             nIters::Int = 50) where {T <: Real}
     #
     Ki = SMatrix{3,3,T,9}(
@@ -874,9 +874,9 @@ function estimateTagPoseOrthogonalIteration(tag::AprilTag{T},
          Matd3x1([ scale,-scale, 0.0]),
          Matd3x1([-scale,-scale, 0.0]))
 
-    v = (Matd3x1(Ki*SVector{3,T}(tag.p[1][1], tag.p[1][2], 1.0)), 
-         Matd3x1(Ki*SVector{3,T}(tag.p[2][1], tag.p[2][2], 1.0)), 
-         Matd3x1(Ki*SVector{3,T}(tag.p[3][1], tag.p[3][2], 1.0)), 
+    v = (Matd3x1(Ki*SVector{3,T}(tag.p[1][1], tag.p[1][2], 1.0)),
+         Matd3x1(Ki*SVector{3,T}(tag.p[2][1], tag.p[2][2], 1.0)),
+         Matd3x1(Ki*SVector{3,T}(tag.p[3][1], tag.p[3][2], 1.0)),
          Matd3x1(Ki*SVector{3,T}(tag.p[4][1], tag.p[4][2], 1.0)))
 
     pose = AprilTags.homographytopose(tag.H, f_width, f_height, c_width, c_height, taglength=taglength)
@@ -979,22 +979,22 @@ end
 """
     $SIGNATURES
 
-Run the orthoganal iteration algorithm on the poses. 
+Run the orthoganal iteration algorithm on the poses.
 
 Notes
 - See apriltag_pose.h
-- [2]: Lu, G. D. Hager and E. Mjolsness, "Fast and globally convergent pose estimation from video images," 
-  in IEEE Transactions on Pattern Analysis and Machine Intelligence, vol. 22, no. 6, pp. 610-622, June 2000. 
+- [2]: Lu, G. D. Hager and E. Mjolsness, "Fast and globally convergent pose estimation from video images,"
+  in IEEE Transactions on Pattern Analysis and Machine Intelligence, vol. 22, no. 6, pp. 610-622, June 2000.
   doi: 10.1109/34.862199
 - The low level C-library uses `fx=f_width`.
 """
 function tagOrthogonalIteration(corners::Union{<:AbstractVector,<:Tuple},
-                                H::AbstractMatrix{T}, 
-                                f_width::Real, 
-                                f_height::Real, 
-                                c_width::Real, 
-                                c_height::Real; 
-                                taglength::Real = 2.0, 
+                                H::AbstractMatrix{T},
+                                f_width::Real,
+                                f_height::Real,
+                                c_width::Real,
+                                c_height::Real;
+                                taglength::Real = 2.0,
                                 nIters::Int = 50 ) where {T <: Real}
     #
     Ki = SMatrix{3,3,T,9}(
@@ -1027,11 +1027,11 @@ function tagOrthogonalIteration(corners::Union{<:AbstractVector,<:Tuple},
     return AprilTags.orthogonalIteration(v, p, t, R, 4, nIters)
 end
 
-tagOrthogonalIteration( tag::AprilTag{T}, 
-                        f_width::Real, 
-                        f_height::Real, 
-                        c_width::Real, 
-                        c_height::Real; 
-                        taglength::Real = 2.0, 
+tagOrthogonalIteration( tag::AprilTag{T},
+                        f_width::Real,
+                        f_height::Real,
+                        c_width::Real,
+                        c_height::Real;
+                        taglength::Real = 2.0,
                         nIters::Int = 50 ) where {T <: Real} = tagOrthogonalIteration(tag.p, tag.H, f_width, f_height, c_width, c_height, taglength=taglength, nIters=nIters)
 #
