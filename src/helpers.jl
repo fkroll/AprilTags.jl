@@ -788,7 +788,7 @@ end
         # 2. Extract pose
         poses_out[i] = _estimate_pose_single(det_ptr, f_width, f_height, c_width, c_height, taglength, pose_p)
     end
-    return n
+    return UInt32(n)
 end
 
 """
@@ -812,9 +812,9 @@ function detectAndPose!(
     threadcall::Bool=false
 )
     max_tags = min(length(tags_out), length(poses_out))
-    return _run_detection(detector, buf, width, height, stride; threadcall=threadcall) do detections
+    return UInt32(_run_detection(detector, buf, width, height, stride; threadcall=threadcall) do detections
         _extract_detections_inplace!(tags_out, poses_out, max_tags, detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p)
-    end
+    end)
 end
 
 """
@@ -839,7 +839,7 @@ function detectAndPose!(
     max_tags = min(length(tags_out), length(poses_out))
     detections = GC.@preserve imbuf _detect_raw(detector.td, image8, threadcall)
     try
-        return _extract_detections_inplace!(tags_out, poses_out, max_tags, detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p)
+        return UInt32(_extract_detections_inplace!(tags_out, poses_out, max_tags, detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p))
     finally
         apriltag_detections_destroy(detections)
     end

@@ -362,6 +362,7 @@ using Test
         # Test image-based detectAndPose!
         n_detected = detectAndPose!(tags_out, poses_out, detector, image, 1.0, 1.0, 1.0, 1.0, 2.0)
         @test n_detected == n_tags
+        @test n_detected isa UInt32
         @test tags_out[1].id == tags_alloc[1].id
         @test poses_out[1].linear == poses_alloc[1].linear
         
@@ -375,6 +376,7 @@ using Test
             
             n_detected_ptr = detectAndPose!(tags_out, poses_out, detector, buf_ptr, image8.width, image8.height, image8.stride, 1.0, 1.0, 1.0, 1.0, 2.0)
             @test n_detected_ptr == n_tags
+            @test n_detected_ptr isa UInt32
             @test tags_out[1].id == tags_alloc[1].id
             @test poses_out[1].linear == poses_alloc[1].linear
             
