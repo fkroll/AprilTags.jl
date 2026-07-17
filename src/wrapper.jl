@@ -111,7 +111,7 @@ const uintptr_t = Culong
 const intmax_t = Clong
 const uintmax_t = Culong
 
-mutable struct image_u8
+struct image_u8
     width::Int32
     height::Int32
     stride::Int32
@@ -479,7 +479,7 @@ Notes:
   - `width` is from left to right,
   - `height` is from top downward.
 """
-mutable struct apriltag_detection_info_t
+struct apriltag_detection_info_t
     det::Ptr{apriltag_detection_t}
     tagsize::Cdouble
     fx::Cdouble

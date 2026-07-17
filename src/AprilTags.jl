@@ -34,6 +34,7 @@ homographytopose,
 threadcalldetect,
 getAprilTagImage,
 detectAndPose,
+detectAndPose!,
 tagOrthogonalIteration,
 # wrappers
 apriltag_detector_create,

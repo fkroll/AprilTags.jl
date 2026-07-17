@@ -34,7 +34,9 @@ mutable struct AprilTagDetector
     #pointers to c managed memmory
     td::Ptr{apriltag_detector_t}
     tf::Ptr{apriltag_family_t}
+    pose_p::apriltag_pose_t
 
+    AprilTagDetector(td, tf) = new(td, tf, apriltag_pose_t())
 end
 
 # Base.propertynames(x::AprilTagDetector, private::Bool=false) =
@@ -131,34 +133,68 @@ function AprilTagDetector(tagfamily::TagFamilies = tag36h11)
 end
 
 const U8Types = Union{UInt8, N0f8, Gray{N0f8}}
+
+const FAMILY_NAME_CACHE = Dict{Cstring, String}()
+const FAMILY_NAME_CACHE_LOCK = ReentrantLock()
+
+function _get_family_name(name_ptr::Cstring)
+    lock(FAMILY_NAME_CACHE_LOCK) do
+        get!(FAMILY_NAME_CACHE, name_ptr) do
+            unsafe_string(name_ptr)
+        end
+    end
+end
+
+function _check_detector(detector::AprilTagDetector)
+    if detector.td == C_NULL
+        error("AprilTags Detector does not exist")
+    end
+    if detector.tf == C_NULL
+        error("AprilTags family does not exist")
+    end
+end
+
+@inline function _detect_raw(detector_td::Ptr{apriltag_detector_t}, image8::AprilTags.image_u8_t, threadcall::Bool)
+    if threadcall
+        return threadcall_apriltag_detector_detect(detector_td, image8)
+    else
+        return apriltag_detector_detect(detector_td, image8)
+    end
+end
+
+@inline function _run_detection(f, detector::AprilTagDetector, image::AbstractMatrix{T}; threadcall::Bool=false) where T <: U8Types
+    _check_detector(detector)
+    image8, imbuf = get_image_u8(image)
+    detections = GC.@preserve imbuf _detect_raw(detector.td, image8, threadcall)
+    try
+        f(detections)
+    finally
+        apriltag_detections_destroy(detections)
+    end
+end
+
+@inline function _run_detection(f, detector::AprilTagDetector, buf::Ptr{UInt8}, width::Integer, height::Integer, stride::Integer; threadcall::Bool=false)
+    _check_detector(detector)
+    if stride < width
+        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
+    end
+    image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)
+    detections = _detect_raw(detector.td, image8, threadcall)
+    try
+        f(detections)
+    finally
+        apriltag_detections_destroy(detections)
+    end
+end
+
 """
 	AprilTagDetector(img)
 Run the april tag detector on a image
 """
 function (detector::AprilTagDetector)(image::AbstractMatrix{T}) where T <: U8Types
-
-    if detector.td == C_NULL
-        error("AprilTags Detector does not exist")
+    _run_detection(detector, image) do detections
+        AprilTags.copyAprilTagDetections(detections)
     end
-
-    if detector.tf == C_NULL
-        error("AprilTags family does not exist")
-    end
-    #create image8 object for april tags
-    image8, imbuf = get_image_u8(image)
-
-    # run detector on image, preserving backing buffer during the call
-    detections = GC.@preserve imbuf apriltag_detector_detect(detector.td, image8)
-
-    try
-        # copy and return detections julia struct
-        tags = AprilTags.copyAprilTagDetections(detections)
-        return tags
-    finally
-        # destroy detections memory
-        apriltag_detections_destroy(detections)
-    end
-
 end
 
 function (detector::AprilTagDetector)(image::AbstractMatrix{ColorTypes.RGB{T}}) where T
@@ -174,25 +210,8 @@ end
 Run the april tag detector on a raw UInt8 pointer with zero copy.
 """
 function (detector::AprilTagDetector)(buf::Ptr{UInt8}, width::Integer, height::Integer, stride::Integer)
-    if detector.td == C_NULL
-        error("AprilTags Detector does not exist")
-    end
-    if stride < width
-        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
-    end
-
-    image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)
-
-    # run detector on raw buffer
-    detections = apriltag_detector_detect(detector.td, image8)
-
-    try
-        # copy and return detections julia struct
-        tags = AprilTags.copyAprilTagDetections(detections)
-        return tags
-    finally
-        # destroy detections memory
-        apriltag_detections_destroy(detections)
+    _run_detection(detector, buf, width, height, stride) do detections
+        AprilTags.copyAprilTagDetections(detections)
     end
 end
 
@@ -201,29 +220,9 @@ end
 Run the april tag detector on a image
 """
 function threadcalldetect(detector::AprilTagDetector, image::AbstractMatrix{T}) where T <: U8Types
-
-    if detector.td == C_NULL
-        error("AprilTags Detector does not exist")
+    _run_detection(detector, image; threadcall=true) do detections
+        AprilTags.copyAprilTagDetections(detections)
     end
-
-    if detector.tf == C_NULL
-        error("AprilTags family does not exist")
-    end
-    #create image8 object for april tags
-    image8, imbuf = get_image_u8(image)
-
-    # run detector on image, preserving backing buffer during the call
-    detections = GC.@preserve imbuf threadcall_apriltag_detector_detect(detector.td, image8)
-
-    try
-        # copy and return detections julia struct
-        tags = AprilTags.copyAprilTagDetections(detections)
-        return tags
-    finally
-        # destroy detections memory
-        apriltag_detections_destroy(detections)
-    end
-
 end
 
 """
@@ -232,25 +231,8 @@ end
 Run the april tag detector on a raw UInt8 pointer with zero copy using threadcall.
 """
 function threadcalldetect(detector::AprilTagDetector, buf::Ptr{UInt8}, width::Integer, height::Integer, stride::Integer)
-    if detector.td == C_NULL
-        error("AprilTags Detector does not exist")
-    end
-    if stride < width
-        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
-    end
-
-    image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)
-
-    # run detector on raw buffer
-    detections = threadcall_apriltag_detector_detect(detector.td, image8)
-
-    try
-        # copy and return detections julia struct
-        tags = AprilTags.copyAprilTagDetections(detections)
-        return tags
-    finally
-        # destroy detections memory
-        apriltag_detections_destroy(detections)
+    _run_detection(detector, buf, width, height, stride; threadcall=true) do detections
+        AprilTags.copyAprilTagDetections(detections)
     end
 end
 
@@ -329,8 +311,9 @@ function copyAprilTagDetections(detections::Ptr{zarray})::Vector{AprilTag{Float6
             pointer_to_apriltag_detection_t = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data),i)
             dettag = unsafe_load(pointer_to_apriltag_detection_t)
 
-            #TODO: implement more tag family stuff, just return family name as a string for now
-            family = unsafe_string(unsafe_load(dettag.family).name)
+            # Use family name cache to avoid allocating string
+            name_ptr = unsafe_load(dettag.family).name
+            family = _get_family_name(name_ptr)
 
             #Reading homography of tag 1 (transpose for c row major and copy since memory is destroyed by c)
             matd = unsafe_load(dettag.H)
@@ -341,11 +324,15 @@ function copyAprilTagDetections(detections::Ptr{zarray})::Vector{AprilTag{Float6
                 unsafe_load(matd.data, 3), unsafe_load(matd.data, 6), unsafe_load(matd.data, 9)
             )
 
-            #convert tuples to static vectors
+            #convert tuples to static vectors without using generator (which allocates closures)
             tagc = SVector{2,Float64}(dettag.c)
-            tagp = SVector{4,SVector{2,Float64}}(SVector{2,Float64}(pt) for pt in dettag.p)
+            tagp = SVector{4,SVector{2,Float64}}(
+                SVector{2,Float64}(dettag.p[1][1], dettag.p[1][2]),
+                SVector{2,Float64}(dettag.p[2][1], dettag.p[2][2]),
+                SVector{2,Float64}(dettag.p[3][1], dettag.p[3][2]),
+                SVector{2,Float64}(dettag.p[4][1], dettag.p[4][2])
+            )
 
-            # apriltags[i] = AprilTags.AprilTag(family, dettag.id, dettag.hamming, dettag.goodness, dettag.decision_margin, H, tagc, tagp)
             apriltags[i] = AprilTags.AprilTag{Float64}(family, dettag.id, dettag.hamming, dettag.decision_margin, H, tagc, tagp)
 
         end
@@ -678,78 +665,65 @@ end
 
 Detect tags and calcuate the pose on them.
 """
+@inline function _estimate_pose_single(det::Ptr{apriltag_detection_t}, f_width, f_height, c_width, c_height, taglength, pose_p::apriltag_pose_t)
+    detinfo = AprilTags.apriltag_detection_info_t(det, taglength, f_width, f_height, c_width, c_height)
+    AprilTags.estimate_pose_for_tag_homography(detinfo, pose_p)
+    try
+        matR = unsafe_load(pose_p.R)
+        R = SMatrix{3,3,Float64,9}(
+            unsafe_load(matR.data, 1), unsafe_load(matR.data, 4), unsafe_load(matR.data, 7),
+            unsafe_load(matR.data, 2), unsafe_load(matR.data, 5), unsafe_load(matR.data, 8),
+            unsafe_load(matR.data, 3), unsafe_load(matR.data, 6), unsafe_load(matR.data, 9)
+        )
+        matT = unsafe_load(pose_p.t)
+        t = SVector{3,Float64}(
+            unsafe_load(matT.data, 1),
+            unsafe_load(matT.data, 2),
+            unsafe_load(matT.data, 3)
+        )
+        return AffineMap(R, t)
+    finally
+        matd_destroy(pose_p.R)
+        matd_destroy(pose_p.t)
+    end
+end
+
+function _estimate_poses(detections::Ptr{zarray}, f_width, f_height, c_width, c_height, taglength, pose_p::apriltag_pose_t)
+    detzarray = unsafe_load(detections)
+    if detzarray.size > 0
+        poses = Vector{TagPose{Float64}}(undef, detzarray.size)
+        for i in 1:detzarray.size
+            det = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data), i)
+            poses[i] = _estimate_pose_single(det, f_width, f_height, c_width, c_height, taglength, pose_p)
+        end
+        return poses
+    else
+        return Vector{TagPose{Float64}}()
+    end
+end
+
+"""
+    $SIGNATURES
+
+Detect tags and calculate the pose on them.
+"""
 function detectAndPose( detector::AprilTagDetector, 
                         image::AbstractMatrix{T}, 
                         f_width, 
                         f_height, 
                         c_width, 
                         c_height, 
-                        taglength ) where T <: U8Types
-    #
-    if detector.td == C_NULL
-        error("AprilTags Detector does not exist")
-    end
-
-    if detector.tf == C_NULL
-        error("AprilTags family does not exist")
-    end
-    #create image8 object for april tags
-    image8, imbuf = get_image_u8(image)
-
-    # run detector on image, preserving backing buffer during the call
-    detections = GC.@preserve imbuf apriltag_detector_detect(detector.td, image8)
-
-    try
-        # copy and return detections julia struct
+                        taglength;
+                        threadcall::Bool=false ) where T <: U8Types
+    _run_detection(detector, image; threadcall=threadcall) do detections
         tags = AprilTags.copyAprilTagDetections(detections)
-
-        detzarray = unsafe_load(detections)
-        if detzarray.size > 0
-            poses = Vector{TagPose{Float64}}(undef,detzarray.size)
-            for i=1:detzarray.size
-                det = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data),i)
-
-                detinfo = AprilTags.apriltag_detection_info_t(det, taglength, f_width, f_height, c_width, c_height)
-
-                pose_p = AprilTags.apriltag_pose_t()
-
-                AprilTags.estimate_pose_for_tag_homography(detinfo, pose_p)
-
-                matR = unsafe_load(pose_p.R)
-                # Avoid unsafe_wrap because it enforces strict 8-byte alignment checks which are not required by modern CPUs
-                R = SMatrix{3,3,Float64,9}(
-                    unsafe_load(matR.data, 1), unsafe_load(matR.data, 4), unsafe_load(matR.data, 7),
-                    unsafe_load(matR.data, 2), unsafe_load(matR.data, 5), unsafe_load(matR.data, 8),
-                    unsafe_load(matR.data, 3), unsafe_load(matR.data, 6), unsafe_load(matR.data, 9)
-                )
-
-                matT = unsafe_load(pose_p.t)
-                # Avoid unsafe_wrap because it enforces strict 8-byte alignment checks which are not required by modern CPUs
-                t = SVector{3,Float64}(
-                    unsafe_load(matT.data, 1),
-                    unsafe_load(matT.data, 2),
-                    unsafe_load(matT.data, 3)
-                )
-
-                poses[i] = AffineMap(R, t)
-
-                # Free the C-allocated matrices to prevent memory leaks
-                matd_destroy(pose_p.R)
-                matd_destroy(pose_p.t)
-            end
-        else
-            poses = Vector{TagPose{Float64}}()
-        end
-
+        poses = _estimate_poses(detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p)
         return tags, poses
-    finally
-        # destroy detections memory
-        apriltag_detections_destroy(detections)
     end
 end
 
 """
-    detectAndPose(detector::AprilTagDetector, buf::Ptr{UInt8}, width::Integer, height::Integer, stride::Integer, f_width, f_height, c_width, c_height, taglength)
+    detectAndPose(detector::AprilTagDetector, buf::Ptr{UInt8}, width::Integer, height::Integer, stride::Integer, f_width, f_height, c_width, c_height, taglength; threadcall::Bool=false)
 
 Detect tags and calculate their pose on a raw UInt8 pointer with zero copy.
 """
@@ -762,64 +736,111 @@ function detectAndPose( detector::AprilTagDetector,
                         f_height, 
                         c_width, 
                         c_height, 
-                        taglength )
-    if detector.td == C_NULL
-        error("AprilTags Detector does not exist")
-    end
-    if stride < width
-        throw(ArgumentError("stride must be >= width (got stride=$stride, width=$width)"))
-    end
-
-    image8 = AprilTags.image_u8_t(Int32(width), Int32(height), Int32(stride), buf)
-
-    # run detector on raw buffer
-    detections = apriltag_detector_detect(detector.td, image8)
-
-    try
-        # copy and return detections julia struct
+                        taglength;
+                        threadcall::Bool=false )
+    _run_detection(detector, buf, width, height, stride; threadcall=threadcall) do detections
         tags = AprilTags.copyAprilTagDetections(detections)
-
-        detzarray = unsafe_load(detections)
-        if detzarray.size > 0
-            poses = Vector{TagPose{Float64}}(undef,detzarray.size)
-            for i=1:detzarray.size
-                det = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data),i)
-
-                detinfo = AprilTags.apriltag_detection_info_t(det, taglength, f_width, f_height, c_width, c_height)
-
-                pose_p = AprilTags.apriltag_pose_t()
-
-                AprilTags.estimate_pose_for_tag_homography(detinfo, pose_p)
-
-                matR = unsafe_load(pose_p.R)
-                # Avoid unsafe_wrap because it enforces strict 8-byte alignment checks which are not required by modern CPUs
-                R = SMatrix{3,3,Float64,9}(
-                    unsafe_load(matR.data, 1), unsafe_load(matR.data, 4), unsafe_load(matR.data, 7),
-                    unsafe_load(matR.data, 2), unsafe_load(matR.data, 5), unsafe_load(matR.data, 8),
-                    unsafe_load(matR.data, 3), unsafe_load(matR.data, 6), unsafe_load(matR.data, 9)
-                )
-
-                matT = unsafe_load(pose_p.t)
-                # Avoid unsafe_wrap because it enforces strict 8-byte alignment checks which are not required by modern CPUs
-                t = SVector{3,Float64}(
-                    unsafe_load(matT.data, 1),
-                    unsafe_load(matT.data, 2),
-                    unsafe_load(matT.data, 3)
-                )
-
-                poses[i] = AffineMap(R, t)
-
-                # Free the C-allocated matrices to prevent memory leaks
-                matd_destroy(pose_p.R)
-                matd_destroy(pose_p.t)
-            end
-        else
-            poses = Vector{TagPose{Float64}}()
-        end
-
+        poses = _estimate_poses(detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p)
         return tags, poses
+    end
+end
+
+@inline function _extract_detections_inplace!(
+    tags_out::AbstractVector{AprilTag{Float64}},
+    poses_out::AbstractVector{TagPose{Float64}},
+    max_tags::Integer,
+    detections::Ptr{zarray},
+    f_width,
+    f_height,
+    c_width,
+    c_height,
+    taglength,
+    pose_p::apriltag_pose_t
+)
+    detzarray = unsafe_load(detections)
+    n = min(detzarray.size, max_tags)
+    for i in 1:n
+        det_ptr = unsafe_load(convert(Ptr{Ptr{AprilTags.apriltag_detection_t}}, detzarray.data), i)
+        dettag = unsafe_load(det_ptr)
+        
+        # 1. Extract AprilTag struct
+        name_ptr = unsafe_load(dettag.family).name
+        family = _get_family_name(name_ptr)
+        
+        # Extract homography
+        matd = unsafe_load(dettag.H)
+        H = SMatrix{3,3,Float64,9}(
+            unsafe_load(matd.data, 1), unsafe_load(matd.data, 4), unsafe_load(matd.data, 7),
+            unsafe_load(matd.data, 2), unsafe_load(matd.data, 5), unsafe_load(matd.data, 8),
+            unsafe_load(matd.data, 3), unsafe_load(matd.data, 6), unsafe_load(matd.data, 9)
+        )
+        
+        tagc = SVector{2,Float64}(dettag.c)
+        tagp = SVector{4,SVector{2,Float64}}(
+            SVector{2,Float64}(dettag.p[1][1], dettag.p[1][2]),
+            SVector{2,Float64}(dettag.p[2][1], dettag.p[2][2]),
+            SVector{2,Float64}(dettag.p[3][1], dettag.p[3][2]),
+            SVector{2,Float64}(dettag.p[4][1], dettag.p[4][2])
+        )
+        
+        tags_out[i] = AprilTag{Float64}(family, dettag.id, dettag.hamming, dettag.decision_margin, H, tagc, tagp)
+        
+        # 2. Extract pose
+        poses_out[i] = _estimate_pose_single(det_ptr, f_width, f_height, c_width, c_height, taglength, pose_p)
+    end
+    return n
+end
+
+"""
+    detectAndPose!(tags_out, poses_out, detector, buf::Ptr{UInt8}, width, height, stride, f_width, f_height, c_width, c_height, taglength; threadcall=false)
+
+Zero-allocating version of tag detection and pose estimation on a raw UInt8 pointer.
+"""
+function detectAndPose!(
+    tags_out::AbstractVector{AprilTag{Float64}},
+    poses_out::AbstractVector{TagPose{Float64}},
+    detector::AprilTagDetector,
+    buf::Ptr{UInt8},
+    width::Integer,
+    height::Integer,
+    stride::Integer,
+    f_width,
+    f_height,
+    c_width,
+    c_height,
+    taglength;
+    threadcall::Bool=false
+)
+    max_tags = min(length(tags_out), length(poses_out))
+    return _run_detection(detector, buf, width, height, stride; threadcall=threadcall) do detections
+        _extract_detections_inplace!(tags_out, poses_out, max_tags, detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p)
+    end
+end
+
+"""
+    detectAndPose!(tags_out, poses_out, detector, image::AbstractMatrix, f_width, f_height, c_width, c_height, taglength; threadcall=false)
+
+Zero-allocating version of tag detection and pose estimation on an image matrix.
+"""
+function detectAndPose!(
+    tags_out::AbstractVector{AprilTag{Float64}},
+    poses_out::AbstractVector{TagPose{Float64}},
+    detector::AprilTagDetector,
+    image::AbstractMatrix{T},
+    f_width,
+    f_height,
+    c_width,
+    c_height,
+    taglength;
+    threadcall::Bool=false
+) where T <: U8Types
+    _check_detector(detector)
+    image8, imbuf = get_image_u8(image)
+    max_tags = min(length(tags_out), length(poses_out))
+    detections = GC.@preserve imbuf _detect_raw(detector.td, image8, threadcall)
+    try
+        return _extract_detections_inplace!(tags_out, poses_out, max_tags, detections, f_width, f_height, c_width, c_height, taglength, detector.pose_p)
     finally
-        # destroy detections memory
         apriltag_detections_destroy(detections)
     end
 end

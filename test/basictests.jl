@@ -350,6 +350,44 @@ using Test
         freeDetector!(detector)
     end
 
+    @testset "Zero-Allocating detectAndPose!" begin
+        detector = AprilTagDetector()
+        tags_alloc, poses_alloc = detectAndPose(detector, image, 1.0, 1.0, 1.0, 1.0, 2.0)
+        
+        # Preallocate output arrays
+        n_tags = length(tags_alloc)
+        tags_out = Vector{AprilTag{Float64}}(undef, n_tags)
+        poses_out = Vector{TagPose{Float64}}(undef, n_tags)
+        
+        # Test image-based detectAndPose!
+        n_detected = detectAndPose!(tags_out, poses_out, detector, image, 1.0, 1.0, 1.0, 1.0, 2.0)
+        @test n_detected == n_tags
+        @test tags_out[1].id == tags_alloc[1].id
+        @test poses_out[1].linear == poses_alloc[1].linear
+        
+        # Test pointer-based detectAndPose!
+        image8, imbuf = AprilTags.get_image_u8(image)
+        GC.@preserve imbuf begin
+            buf_ptr = Base.unsafe_convert(Ptr{UInt8}, imbuf)
+            
+            # Clear output arrays
+            fill!(tags_out, tags_alloc[1])
+            
+            n_detected_ptr = detectAndPose!(tags_out, poses_out, detector, buf_ptr, image8.width, image8.height, image8.stride, 1.0, 1.0, 1.0, 1.0, 2.0)
+            @test n_detected_ptr == n_tags
+            @test tags_out[1].id == tags_alloc[1].id
+            @test poses_out[1].linear == poses_alloc[1].linear
+            
+            # Run once to warm-up and populate family name cache
+            detectAndPose!(tags_out, poses_out, detector, buf_ptr, image8.width, image8.height, image8.stride, 1.0, 1.0, 1.0, 1.0, 2.0)
+            
+            # Assert zero allocations
+            allocs = @allocated detectAndPose!(tags_out, poses_out, detector, buf_ptr, image8.width, image8.height, image8.stride, 1.0, 1.0, 1.0, 1.0, 2.0)
+            @test allocs == 0
+        end
+        freeDetector!(detector)
+    end
+
     @testset "Generator stub error" begin
         @test_throws ErrorException generateTagSheet(Int[])
     end
